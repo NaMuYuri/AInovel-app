@@ -413,39 +413,6 @@ if st.session_state.api_usage['last_reset_date'] != current_date:
 
 # --- 認証処理（初回ユーザー設定） ---
 
-def get_user_data_path():
-    """ユーザーデータを保存するパスを返す"""
-    # Streamlit Cloudでは永続化のためにファイル保存が推奨されるが、
-    # ここでは session_state に限定するため、この関数は使用しない。
-    # もし永続化が必要なら、ここを調整する。
-    return None 
-
-def save_user_data():
-    """ユーザーデータをsession_stateに保存（永続化はしない）"""
-    # 現在は session_state に保持するだけ
-    pass
-
-def load_user_data(username):
-    """ユーザーデータをsession_stateから読み込み"""
-    # ユーザー固有のAPIキーなどを読み込む
-    # 現在は、ユーザーごとにAPIキーを直接 session_state.user_api_keys[username] に格納する。
-    # 永続化する場合は、ファイルやDBから読み込む処理が必要。
-    pass
-
-def authenticate_user(username, password):
-    """ユーザー名とパスワードの認証を行う"""
-    # 簡易認証：初回登録時に設定されたユーザー名とパスワードを検証
-    if username == st.session_state.get('registered_username') and \
-       password == st.session_state.get('registered_password'):
-        st.session_state.current_user = username
-        st.session_state.logged_in = True
-        # ユーザー固有のAPIキーをロード（または初期化）
-        if username not in st.session_state.user_api_keys:
-            st.session_state.user_api_keys[username] = {}
-        load_user_data(username) # ここで永続化されたデータをロードする想定
-        return True
-    return False
-
 def setup_user_view():
     """初めてアプリを使うユーザー向けの、ユーザー名とパスワード設定画面"""
     st.markdown('<div class="login-container">', unsafe_allow_html=True)
@@ -455,26 +422,28 @@ def setup_user_view():
     
     st.markdown("アカウントを作成し、創作を開始しましょう。", unsafe_allow_html=True)
     
+    # st.form を使用する箇所に submit ボタンを追加し、st.h3 を修正
     with st.form("user_setup_form", clear_on_submit=True):
         st.markdown('<div class="auth-form">', unsafe_allow_html=True)
-        st.h3("アカウント設定")
+        # st.h3("アカウント設定") -> st.markdown("### アカウント設定") に修正
+        st.markdown("### アカウント設定", unsafe_allow_html=True) # 見出しの修正
         
         new_username = st.text_input("希望するユーザー名")
         new_password = st.text_input("パスワード設定", type="password")
         confirm_password = st.text_input("パスワード確認", type="password")
         
+        # submit ボタンを追加
         submitted = st.form_submit_button("アカウントを作成して開始")
         
-        if submitted:
+        if submitted: # submit ボタンが押された場合のみ以下の処理を実行
             if new_username and new_password and confirm_password:
                 if new_password == confirm_password:
-                    # ここでユーザー名を検証・保存する（今回は簡易的にsession_stateに）
                     st.session_state.registered_username = new_username
                     st.session_state.registered_password = new_password
                     st.session_state.current_user = new_username
                     st.session_state.logged_in = True
-                    st.session_state.user_api_keys[new_username] = {} # 新しいユーザーのAPIキー用辞書を初期化
-                    save_user_data() # 永続化処理
+                    st.session_state.user_api_keys[new_username] = {}
+                    save_user_data()
                     st.success(f"アカウント「{new_username}」が作成されました！")
                     st.rerun()
                 else:
@@ -484,7 +453,6 @@ def setup_user_view():
         st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown('</div>', unsafe_allow_html=True)
-
 
 def login_view():
     """ログイン画面"""
