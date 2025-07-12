@@ -376,16 +376,113 @@ def modify_content_with_ai(content: str, modification_request: str, content_type
     api_response = call_generative_api(modification_prompt)
     return api_response['text']
 
+# --- 認証処理（初回ユーザー設定） ---
+
+# save_user_data() 関数の定義を追加
+def save_user_data():
+    """ユーザーデータをsession_stateに保存（永続化はしない簡易版）"""
+    # このバージョンでは、ユーザー情報は session_state にのみ保持されます。
+    # 永続的な保存が必要な場合は、ファイルやデータベースへの書き込み処理を追加します。
+    pass
+
+def load_user_data(username):
+    """ユーザーデータをsession_stateから読み込み"""
+    # 今回は簡易的なため、セッションステートには特に何もロードしません。
+    pass
+
+def authenticate_user(username, password):
+    """ユーザー名とパスワードの認証を行う"""
+    # 簡易認証：初回登録時に設定されたユーザー名とパスワードを検証
+    if username == st.session_state.get('registered_username') and \
+       password == st.session_state.get('registered_password'):
+        st.session_state.current_user = username
+        st.session_state.logged_in = True
+        # ユーザー固有のAPIキーをロード（または初期化）
+        if username not in st.session_state.user_api_keys:
+            st.session_state.user_api_keys[username] = {}
+        load_user_data(username) # ここで永続化されたデータをロードする想定
+        return True
+    return False
+
+def setup_user_view():
+    """初めてアプリを使うユーザー向けの、ユーザー名とパスワード設定画面"""
+    st.markdown('<div class="login-container">', unsafe_allow_html=True)
+    st.image("https://img.icons8.com/ios-filled/50/000000/book.png", width=100)
+    st.title("物語創作 執筆支援ツール")
+    st.subheader("ようこそ！")
+    
+    st.markdown("アカウントを作成し、創作を開始しましょう。", unsafe_allow_html=True)
+    
+    with st.form("user_setup_form", clear_on_submit=True):
+        st.markdown('<div class="auth-form">', unsafe_allow_html=True)
+        st.markdown("### アカウント設定", unsafe_allow_html=True) # 見出しの修正
+        
+        new_username = st.text_input("希望するユーザー名")
+        new_password = st.text_input("パスワード設定", type="password")
+        confirm_password = st.text_input("パスワード確認", type="password")
+        
+        submitted = st.form_submit_button("アカウントを作成して開始")
+        
+        if submitted:
+            if new_username and new_password and confirm_password:
+                if new_password == confirm_password:
+                    # ここでユーザー名を検証・保存する（今回は簡易的にsession_stateに）
+                    st.session_state.registered_username = new_username
+                    st.session_state.registered_password = new_password
+                    st.session_state.current_user = new_username
+                    st.session_state.logged_in = True
+                    st.session_state.user_api_keys[new_username] = {} # 新しいユーザーのAPIキー用辞書を初期化
+                    save_user_data() # 永続化処理 (今回は何もしない)
+                    st.success(f"アカウント「{new_username}」が作成されました！")
+                    st.rerun()
+                else:
+                    st.error("パスワードが一致しません。")
+            else:
+                st.error("ユーザー名とパスワードを両方入力してください。")
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+def login_view():
+    """ログイン画面"""
+    st.markdown('<div class="login-container">', unsafe_allow_html=True)
+    st.image("https://img.icons8.com/ios-filled/50/000000/book.png", width=100)
+    st.title("物語創作 執筆支援ツール")
+    st.subheader("ログイン")
+    
+    with st.form("login_form", clear_on_submit=True):
+        st.markdown('<div class="auth-form">', unsafe_allow_html=True)
+        st.h3("ログイン") # こちらは st.h3 で問題なさそう
+        
+        login_username = st.text_input("ユーザー名", key="login_username_input")
+        login_password = st.text_input("パスワード", type="password", key="login_password_input")
+        
+        login_button = st.form_submit_button("ログイン")
+        
+        if login_button:
+            if authenticate_user(login_username, login_password):
+                st.success(f"ようこそ、{st.session_state.current_user}さん！")
+                st.rerun()
+            else:
+                st.error("ユーザー名またはパスワードが間違っています。")
+        st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
 # --- セッションステート初期化 ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 if 'current_user' not in st.session_state:
-    st.session_state.current_user = None # ログインしているユーザー名を保持
+    st.session_state.current_user = None
+if 'registered_username' not in st.session_state: # 登録済みのユーザー名を保持
+    st.session_state.registered_username = None
+if 'registered_password' not in st.session_state: # 登録済みパスワードを保持
+    st.session_state.registered_password = None
 if 'projects' not in st.session_state:
     st.session_state.projects = {}
 if 'current_project' not in st.session_state:
     st.session_state.current_project = None
-# APIキーはユーザーごとに管理するため、session_state.user_api_keys を使用
+# APIキーはユーザーごとに管理
 if 'user_api_keys' not in st.session_state:
     st.session_state.user_api_keys = {} # { 'username': {'gemini': '...', 'openai': '...'}, ... }
 if 'selected_model_provider' not in st.session_state:
@@ -411,80 +508,12 @@ current_date = datetime.now().date().isoformat()
 if st.session_state.api_usage['last_reset_date'] != current_date:
     st.session_state.api_usage.update({'daily_requests': 0, 'daily_tokens_used': 0, 'last_reset_date': current_date})
 
-# --- 認証処理（初回ユーザー設定） ---
-
-def setup_user_view():
-    """初めてアプリを使うユーザー向けの、ユーザー名とパスワード設定画面"""
-    st.markdown('<div class="login-container">', unsafe_allow_html=True)
-    st.image("https://img.icons8.com/ios-filled/50/000000/book.png", width=100)
-    st.title("物語創作 執筆支援ツール")
-    st.subheader("ようこそ！")
-    
-    st.markdown("アカウントを作成し、創作を開始しましょう。", unsafe_allow_html=True)
-    
-    # st.form を使用する箇所に submit ボタンを追加し、st.h3 を修正
-    with st.form("user_setup_form", clear_on_submit=True):
-        st.markdown('<div class="auth-form">', unsafe_allow_html=True)
-        # st.h3("アカウント設定") -> st.markdown("### アカウント設定") に修正
-        st.markdown("### アカウント設定", unsafe_allow_html=True) # 見出しの修正
-        
-        new_username = st.text_input("希望するユーザー名")
-        new_password = st.text_input("パスワード設定", type="password")
-        confirm_password = st.text_input("パスワード確認", type="password")
-        
-        # submit ボタンを追加
-        submitted = st.form_submit_button("アカウントを作成して開始")
-        
-        if submitted: # submit ボタンが押された場合のみ以下の処理を実行
-            if new_username and new_password and confirm_password:
-                if new_password == confirm_password:
-                    st.session_state.registered_username = new_username
-                    st.session_state.registered_password = new_password
-                    st.session_state.current_user = new_username
-                    st.session_state.logged_in = True
-                    st.session_state.user_api_keys[new_username] = {}
-                    save_user_data()
-                    st.success(f"アカウント「{new_username}」が作成されました！")
-                    st.rerun()
-                else:
-                    st.error("パスワードが一致しません。")
-            else:
-                st.error("ユーザー名とパスワードを両方入力してください。")
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-
-def login_view():
-    """ログイン画面"""
-    st.markdown('<div class="login-container">', unsafe_allow_html=True)
-    st.image("https://img.icons8.com/ios-filled/50/000000/book.png", width=100)
-    st.title("物語創作 執筆支援ツール")
-    st.subheader("ログイン")
-    
-    with st.form("login_form", clear_on_submit=True):
-        st.markdown('<div class="auth-form">', unsafe_allow_html=True)
-        st.h3("ログイン")
-        
-        login_username = st.text_input("ユーザー名", key="login_username_input")
-        login_password = st.text_input("パスワード", type="password", key="login_password_input")
-        
-        login_button = st.form_submit_button("ログイン")
-        
-        if login_button:
-            if authenticate_user(login_username, login_password):
-                st.success(f"ようこそ、{st.session_state.current_user}さん！")
-                st.rerun()
-            else:
-                st.error("ユーザー名またはパスワードが間違っています。")
-        st.markdown('</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
 # --- 用語集管理のサイドバー表示関数 ---
 def glossary_sidebar_view():
     st.sidebar.markdown("---")
     st.sidebar.subheader("📚 用語集管理")
     
-    if not st.session_state.current_user: # ログインしていない場合は表示しない
+    if not st.session_state.current_user:
         st.sidebar.info("ログインしてください。")
         return
 
@@ -596,10 +625,8 @@ def main_app_view():
     current_user = st.session_state.current_user
     user_api_keys = st.session_state.user_api_keys.get(current_user, {})
 
-    # サイドバーの入力フィールドに現在の値を反映させるために session_state を使う
-    # secrets.tomlからの値は、初回起動時や初回ログイン時に session_state に初期値として設定する方が良い
-    # ここでは、既に session_state.user_api_keys に保存されている値を入力フィールドに表示する
-    
+    # sidebarの入力フィールドに現在の値を反映させるために session_state を使う
+    # (ユーザーが入力した値を保持するため、secretsの値で直接上書きしない)
     gemini_key_input = st.sidebar.text_input(
         "Google Gemini API Key", 
         type="password", 
@@ -628,7 +655,7 @@ def main_app_view():
     if claude_key_input != user_api_keys.get('claude'):
         user_api_keys['claude'] = claude_key_input
 
-    st.session_state.user_api_keys[current_user] = user_api_keys # 更新したAPIキーをセッションステートに保存
+    st.session_state.user_api_keys[current_user] = user_api_keys
 
 
     def is_api_key_set():
