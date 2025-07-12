@@ -1,0 +1,5 @@
+streamlit
+google-generativeai
+openai
+anthropic
+requests # または他のHTTPクライアントが必要な場合（今回は直接使っていませんが、将来的な連携のために含めることもあります）
