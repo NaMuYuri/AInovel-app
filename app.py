@@ -78,8 +78,24 @@ st.markdown("""
     font-size: 0.9em;
     height: 80px;
 }
-.st-emotion-grid { /* Dialogの背景色を調整 */
+.st-emotion-grid {
     background-color: #f8f9fa;
+}
+/* 新規ユーザー登録・ログインフォーム用スタイル */
+.auth-form {
+    background-color: #f0f4f8;
+    padding: 20px;
+    border-radius: 10px;
+    border: 1px solid #cce0f0;
+    margin-top: 20px;
+}
+.auth-form h3 {
+    color: #0056b3;
+    margin-bottom: 15px;
+}
+.auth-form .stButton > button {
+    width: 100%;
+    margin-top: 10px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -117,7 +133,7 @@ def log_api_usage(prompt: str, response: str, model_name: str, prompt_tokens: in
 
 def get_model_name(provider: str) -> str:
     if provider == "Gemini":
-        return "gemini-2.0-flash" # ご提示のcurlコマンドに基づき更新
+        return "gemini-2.0-flash"
     elif provider == "OpenAI":
         return "gpt-4o-mini"
     elif provider == "Claude":
@@ -150,12 +166,9 @@ def analyze_synopsis_quality(synopsis: str) -> int:
 def call_generative_api(prompt: str) -> Dict:
     """選択されたAIモデルのAPIを呼び出す統一関数"""
     model_provider = st.session_state.get('selected_model_provider', 'Gemini')
-    # secrets.get() を使用してAPIキーを取得
-    api_keys = {
-        "gemini": st.secrets.get("GEMINI_API_KEY", ""),
-        "openai": st.secrets.get("OPENAI_API_KEY", ""),
-        "claude": st.secrets.get("CLAUDE_API_KEY", "")
-    }
+    # session_state からユーザー固有のAPIキーを取得
+    api_keys = st.session_state.get('user_api_keys', {})
+    
     model_name = get_model_name(model_provider)
     
     try:
@@ -366,13 +379,15 @@ def modify_content_with_ai(content: str, modification_request: str, content_type
 # --- セッションステート初期化 ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
+if 'current_user' not in st.session_state:
+    st.session_state.current_user = None # ログインしているユーザー名を保持
 if 'projects' not in st.session_state:
     st.session_state.projects = {}
 if 'current_project' not in st.session_state:
     st.session_state.current_project = None
-# APIキーは secrets.get() で取得するため、ここでは初期化しない（必要に応じてデフォルト値を入れる）
-if 'api_keys' not in st.session_state:
-    st.session_state.api_keys = {"gemini": "", "openai": "", "claude": ""}
+# APIキーはユーザーごとに管理するため、session_state.user_api_keys を使用
+if 'user_api_keys' not in st.session_state:
+    st.session_state.user_api_keys = {} # { 'username': {'gemini': '...', 'openai': '...'}, ... }
 if 'selected_model_provider' not in st.session_state:
     st.session_state.selected_model_provider = "Gemini"
 if 'api_usage' not in st.session_state:
@@ -396,38 +411,104 @@ current_date = datetime.now().date().isoformat()
 if st.session_state.api_usage['last_reset_date'] != current_date:
     st.session_state.api_usage.update({'daily_requests': 0, 'daily_tokens_used': 0, 'last_reset_date': current_date})
 
-# --- 簡易ログイン処理 ---
-# Streamlit Cloud では secrets.toml から取得することを想定
-# ローカル実行時のフォールバックパスワード（デモ用）
-# !!! このパスワードはご自身の安全なものに変更してください !!!
-# ローカルで secrets.toml を使う場合は、その中に APP_PASSWORD を設定してください。
-try:
-    APP_PASSWORD = st.secrets["APP_PASSWORD"]
-except KeyError:
-    APP_PASSWORD = "fallback_password_for_local_dev_change_me" # ローカル実行時用の仮パスワード
-    # secrets.toml にパスワードが設定されていない場合、警告を出すと親切かもしれません
-    if not st.secrets.get("GEMINI_API_KEY"): # 例としてAPIキーもなければ警告
-         st.warning("APP_PASSWORD および API キーが secrets.toml に設定されていません。ローカル開発環境では、`.streamlit/secrets.toml` に設定してください。")
+# --- 認証処理（初回ユーザー設定） ---
 
+def get_user_data_path():
+    """ユーザーデータを保存するパスを返す"""
+    # Streamlit Cloudでは永続化のためにファイル保存が推奨されるが、
+    # ここでは session_state に限定するため、この関数は使用しない。
+    # もし永続化が必要なら、ここを調整する。
+    return None 
 
-def check_password(password):
-    return password == APP_PASSWORD
+def save_user_data():
+    """ユーザーデータをsession_stateに保存（永続化はしない）"""
+    # 現在は session_state に保持するだけ
+    pass
+
+def load_user_data(username):
+    """ユーザーデータをsession_stateから読み込み"""
+    # ユーザー固有のAPIキーなどを読み込む
+    # 現在は、ユーザーごとにAPIキーを直接 session_state.user_api_keys[username] に格納する。
+    # 永続化する場合は、ファイルやDBから読み込む処理が必要。
+    pass
+
+def authenticate_user(username, password):
+    """ユーザー名とパスワードの認証を行う"""
+    # 簡易認証：初回登録時に設定されたユーザー名とパスワードを検証
+    if username == st.session_state.get('registered_username') and \
+       password == st.session_state.get('registered_password'):
+        st.session_state.current_user = username
+        st.session_state.logged_in = True
+        # ユーザー固有のAPIキーをロード（または初期化）
+        if username not in st.session_state.user_api_keys:
+            st.session_state.user_api_keys[username] = {}
+        load_user_data(username) # ここで永続化されたデータをロードする想定
+        return True
+    return False
+
+def setup_user_view():
+    """初めてアプリを使うユーザー向けの、ユーザー名とパスワード設定画面"""
+    st.markdown('<div class="login-container">', unsafe_allow_html=True)
+    st.image("https://img.icons8.com/ios-filled/50/000000/book.png", width=100)
+    st.title("物語創作 執筆支援ツール")
+    st.subheader("ようこそ！")
+    
+    st.markdown("アカウントを作成し、創作を開始しましょう。", unsafe_allow_html=True)
+    
+    with st.form("user_setup_form", clear_on_submit=True):
+        st.markdown('<div class="auth-form">', unsafe_allow_html=True)
+        st.h3("アカウント設定")
+        
+        new_username = st.text_input("希望するユーザー名")
+        new_password = st.text_input("パスワード設定", type="password")
+        confirm_password = st.text_input("パスワード確認", type="password")
+        
+        submitted = st.form_submit_button("アカウントを作成して開始")
+        
+        if submitted:
+            if new_username and new_password and confirm_password:
+                if new_password == confirm_password:
+                    # ここでユーザー名を検証・保存する（今回は簡易的にsession_stateに）
+                    st.session_state.registered_username = new_username
+                    st.session_state.registered_password = new_password
+                    st.session_state.current_user = new_username
+                    st.session_state.logged_in = True
+                    st.session_state.user_api_keys[new_username] = {} # 新しいユーザーのAPIキー用辞書を初期化
+                    save_user_data() # 永続化処理
+                    st.success(f"アカウント「{new_username}」が作成されました！")
+                    st.rerun()
+                else:
+                    st.error("パスワードが一致しません。")
+            else:
+                st.error("ユーザー名とパスワードを両方入力してください。")
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
 
 def login_view():
+    """ログイン画面"""
     st.markdown('<div class="login-container">', unsafe_allow_html=True)
     st.image("https://img.icons8.com/ios-filled/50/000000/book.png", width=100)
     st.title("物語創作 執筆支援ツール")
     st.subheader("ログイン")
     
-    password_input = st.text_input("パスワードを入力してください", type="password", key="password_input")
-    
-    if st.button("ログイン"):
-        if check_password(password_input):
-            st.session_state.logged_in = True
-            st.session_state.password_input = ""
-            st.rerun()
-        else:
-            st.error("パスワードが間違っています。もう一度お試しください。")
+    with st.form("login_form", clear_on_submit=True):
+        st.markdown('<div class="auth-form">', unsafe_allow_html=True)
+        st.h3("ログイン")
+        
+        login_username = st.text_input("ユーザー名", key="login_username_input")
+        login_password = st.text_input("パスワード", type="password", key="login_password_input")
+        
+        login_button = st.form_submit_button("ログイン")
+        
+        if login_button:
+            if authenticate_user(login_username, login_password):
+                st.success(f"ようこそ、{st.session_state.current_user}さん！")
+                st.rerun()
+            else:
+                st.error("ユーザー名またはパスワードが間違っています。")
+        st.markdown('</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
 # --- 用語集管理のサイドバー表示関数 ---
@@ -435,12 +516,15 @@ def glossary_sidebar_view():
     st.sidebar.markdown("---")
     st.sidebar.subheader("📚 用語集管理")
     
+    if not st.session_state.current_user: # ログインしていない場合は表示しない
+        st.sidebar.info("ログインしてください。")
+        return
+
     if not st.session_state.current_project:
         st.sidebar.info("プロジェクトを選択してください。")
         return
 
     project = st.session_state.projects[st.session_state.current_project]
-    # glossary が存在しない場合は初期化 (インポート時などに保証)
     if 'glossary' not in project:
         project['glossary'] = {}
     glossary = project['glossary']
@@ -488,19 +572,16 @@ def glossary_sidebar_view():
                             st.rerun()
                     with col_term_delete:
                         if st.button("削除", key=f"delete_glossary_{term_name}"):
-                            # 削除確認用のボタンをネストする (ストリームリットの挙動を考慮)
                             if st.sidebar.button(f"確定: '{term_name}' を削除", key=f"confirm_delete_glossary_{term_name}"):
                                 del glossary[term_name]
                                 st.sidebar.success(f"「{term_name}」を削除しました。")
                                 st.rerun()
 
-    # 用語編集ダイアログ
     if 'editing_glossary_term' in st.session_state and st.session_state.editing_glossary_term:
         term_to_edit = st.session_state.editing_glossary_term
         term_data_orig = glossary.get(term_to_edit)
         
         if term_data_orig:
-            # st.dialog を key 付きで使うことで、複数開けないようにする
             with st.dialog(f"「{term_to_edit}」を編集", key="edit_glossary_dialog"):
                 edited_term_name = st.text_input("用語名", value=term_to_edit, key=f"edit_glossary_name_input_{term_to_edit}")
                 edited_term_description = st.text_area("説明", value=term_data_orig.get('description', ''), key=f"edit_glossary_description_input_{term_to_edit}", height=120)
@@ -534,7 +615,7 @@ def main_app_view():
     # --- サイドバー ---
     st.sidebar.title("🔧 設定")
 
-    # AIモデル選択
+    # APIキー設定セクション
     st.sidebar.subheader("🧠 AIモデル設定")
     st.session_state.selected_model_provider = st.sidebar.selectbox(
         "使用するAIモデル",
@@ -542,26 +623,50 @@ def main_app_view():
         index=["Gemini", "OpenAI", "Claude"].index(st.session_state.selected_model_provider)
     )
 
-    # APIキー入力 - Streamlit secrets から取得し、session_state に反映
-    # session_state を優先し、secrets にあれば上書きする（ローカルでの一時入力にも対応）
-    gemini_key_from_secrets = st.secrets.get("GEMINI_API_KEY", "")
-    openai_key_from_secrets = st.secrets.get("OPENAI_API_KEY", "")
-    claude_key_from_secrets = st.secrets.get("CLAUDE_API_KEY", "")
+    # ユーザー固有のAPIキー設定フィールド
+    st.sidebar.subheader("🔑 APIキー設定")
+    current_user = st.session_state.current_user
+    user_api_keys = st.session_state.user_api_keys.get(current_user, {})
 
-    st.session_state.api_keys['gemini'] = gemini_key_from_secrets or st.session_state.api_keys['gemini']
-    st.session_state.api_keys['openai'] = openai_key_from_secrets or st.session_state.api_keys['openai']
-    st.session_state.api_keys['claude'] = claude_key_from_secrets or st.session_state.api_keys['claude']
+    # サイドバーの入力フィールドに現在の値を反映させるために session_state を使う
+    # secrets.tomlからの値は、初回起動時や初回ログイン時に session_state に初期値として設定する方が良い
+    # ここでは、既に session_state.user_api_keys に保存されている値を入力フィールドに表示する
+    
+    gemini_key_input = st.sidebar.text_input(
+        "Google Gemini API Key", 
+        type="password", 
+        value=user_api_keys.get('gemini', ''), 
+        key=f"user_gemini_api_key_input_{current_user}",
+        help="Gemini 2.0 Flash を使う場合もここに入力します。"
+    )
+    openai_key_input = st.sidebar.text_input(
+        "OpenAI API Key", 
+        type="password", 
+        value=user_api_keys.get('openai', ''), 
+        key=f"user_openai_api_key_input_{current_user}"
+    )
+    claude_key_input = st.sidebar.text_input(
+        "Anthropic (Claude) API Key", 
+        type="password", 
+        value=user_api_keys.get('claude', ''), 
+        key=f"user_claude_api_key_input_{current_user}"
+    )
+    
+    # 入力されたAPIキーを session_state.user_api_keys に保存
+    if gemini_key_input != user_api_keys.get('gemini'):
+        user_api_keys['gemini'] = gemini_key_input
+    if openai_key_input != user_api_keys.get('openai'):
+        user_api_keys['openai'] = openai_key_input
+    if claude_key_input != user_api_keys.get('claude'):
+        user_api_keys['claude'] = claude_key_input
 
-    # sidebarのtext_inputに session_state の値を反映
-    # (ユーザーが入力した値を保持するため、secretsの値で直接上書きしない)
-    st.session_state.api_keys['gemini'] = st.sidebar.text_input("Google Gemini API Key", type="password", value=st.session_state.api_keys['gemini'], help="Gemini 2.0 Flash を使う場合もここに入力します。", key="gemini_api_key_input")
-    st.session_state.api_keys['openai'] = st.sidebar.text_input("OpenAI API Key", type="password", value=st.session_state.api_keys['openai'], key="openai_api_key_input")
-    st.session_state.api_keys['claude'] = st.sidebar.text_input("Anthropic (Claude) API Key", type="password", value=st.session_state.api_keys['claude'], key="claude_api_key_input")
+    st.session_state.user_api_keys[current_user] = user_api_keys # 更新したAPIキーをセッションステートに保存
 
 
     def is_api_key_set():
         provider = st.session_state.selected_model_provider.lower()
-        return bool(st.session_state.api_keys.get(provider))
+        # 現在ログインしているユーザーのAPIキーを使用
+        return bool(st.session_state.user_api_keys.get(current_user, {}).get(provider))
 
     # API使用状況表示
     st.sidebar.markdown("---")
@@ -607,7 +712,7 @@ def main_app_view():
                     'created_at': datetime.now().isoformat(), 'synopsis': '', 'characters': {},
                     'world_setting': '', 'plot_outline': '', 'chapters': {}, 'genre': '',
                     'target_audience': '', 'theme': '', 'writing_mode': 'manual',
-                    'glossary': {} # 新規プロジェクト用に用語集を初期化
+                    'glossary': {}
                 }
                 st.session_state.current_project = new_project_name
                 st.success(f"プロジェクト「{new_project_name}」を作成しました。")
@@ -653,7 +758,6 @@ def main_app_view():
             try:
                 imported_data = json.load(uploaded_file)
                 st.session_state.projects.update(imported_data)
-                # インポート時に用語集がなければ初期化
                 for project_name, project_data in st.session_state.projects.items():
                     if 'glossary' not in project_data:
                         project_data['glossary'] = {}
@@ -1218,7 +1322,7 @@ def main_app_view():
         GEMINI_API_KEY = "取得したGeminiのAPIキー"
         OPENAI_API_KEY = "取得したOpenAIのAPIキー"
         CLAUDE_API_KEY = "取得したClaudeのAPIキー"
-        APP_PASSWORD = "あなたの設定したパスワード"
+        # APP_PASSWORD = "あなたの設定したパスワード" # もしアプリ全体にパスワードを設定する場合
         ```
         これにより、キーがコードに直接含まれることなく安全に管理され、アプリ内で利用できるようになります。
         
@@ -1227,6 +1331,10 @@ def main_app_view():
 
 # --- アプリケーションの実行 ---
 if not st.session_state.logged_in:
-    login_view()
+    # アプリ初回起動時、またはセッションが失われた場合
+    if st.session_state.get('registered_username') is None:
+        setup_user_view() # ユーザー登録画面を表示
+    else:
+        login_view() # 登録済みユーザーはログイン画面へ
 else:
     main_app_view()
